@@ -133,7 +133,7 @@ def compute_displacements(traj, atom_pairs, periodic=True, opt=True):
     return _displacement(xyz, pairs)
 
 
-def compute_center_of_mass(traj):
+def compute_center_of_mass(traj,atom_indices=None):
     """Compute the center of mass for each frame.
 
     Parameters
@@ -141,17 +141,26 @@ def compute_center_of_mass(traj):
     traj : Trajectory
         Trajectory to compute center of mass for
 
+    atom_indices : array-like, dtype=int, shape=(n_atoms)
+            List of indices of atoms to use in computing com
+
     Returns
     -------
     com : np.ndarray, shape=(n_frames, 3)
          Coordinates of the center of mass for each frame
     """
 
+    if atom_indices is not None and len(atom_indices)>0:
+        xyz = traj.xyz[:,atom_indices,:]
+        masses = np.array([a.element.mass for a in traj.top.atoms if a.index in atom_indices])
+    else:
+        xyz = traj.xyz
+        masses = np.array([a.element.mass for a in traj.top.atoms])
+
     com = np.zeros((traj.n_frames, 3))
-    masses = np.array([a.element.mass for a in traj.top.atoms])
     masses /= masses.sum()
 
-    for i, x in enumerate(traj.xyz):
+    for i, x in enumerate(xyz):
         com[i, :] = x.astype('float64').T.dot(masses)
     return com
 
