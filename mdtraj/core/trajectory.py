@@ -60,12 +60,13 @@ from mdtraj.core.topology import Topology
 from mdtraj.core.residue_names import _SOLVENT_TYPES
 from mdtraj.utils import (ensure_type, in_units_of, lengths_and_angles_to_box_vectors,
                           box_vectors_to_lengths_and_angles, cast_indices,
-                          deprecated)
+                          deprecated,import_)
 from mdtraj.utils.six.moves import xrange
 from mdtraj.utils.six import PY3, string_types
 from mdtraj import _rmsd
 from mdtraj import _FormatRegistry
-from mdtraj.geometry import distance
+from mdtraj import element
+from mdtraj.geometry import distance, compute_center_of_mass
 
 ##############################################################################
 # Globals
@@ -1595,6 +1596,74 @@ class Trajectory(object):
             depending on the value of ``inplace``.
         """
         return self.atom_slice(atom_indices, inplace=inplace)
+
+    def cg_by_index(self, atom_indices_list, bead_label_list, inplace=False, bonds=None):
+        """Create a coarse grained (CG) trajectory from subsets of atoms by 
+            computing centers of mass of selected sets of atoms."
+
+        Parameters
+        ----------
+        atom_indices_list : list of array-like, dtype=int, shape=(n_beads,n_atoms)
+            List of indices of atoms to combine into CG sites
+        bead_label_list : list of maximum 4-letter strings to label CG sites
+        inplace : bool, default=False
+            If ``True``, the operation is done inplace, modifying ``self``.
+            Otherwise, a copy is returned with the sliced atoms, and
+            ``self`` is not modified.
+        bonds : array-like,dtype=int, shape=(n_bonds,2), default=None
+            If specified, sets these bonds in new topology 
+
+        Returns
+        -------
+        traj : md.Trajectory
+            The return value is either ``self``, or the new trajectory,
+            depending on the value of ``inplace``.
+
+        """
+        if not len(atom_indices_list)==len(bead_label_list):
+            raise ValueError("Must supply a list of bead labels of the same length as a list of selected atom indices")
+        for bead_label in bead_label_list:
+            if not (type(bead_label) is str) or len(bead_label)>4 or len(bead_label)<1:
+                raise ValueError("Specified bead label '%s' is not valid, must be a string between 1 and 4 characters"%bead_label)
+        bead_label_list = [ bead_label.upper() for bead_label in bead_label_list ]
+
+        n_beads = len(atom_indices_list)
+        xyz = np.zeros((self.xyz.shape[0],n_beads,self.xyz.shape[2]),dtype=self.xyz.dtype,order='C')
+        columns = ["serial","name","element","resSeq","resName","chainID"]
+        masses = np.array([  np.sum([a.element.mass for a in self.top.atoms if a.index in atom_indices]) for atom_indices in atom_indices_list],dtype=np.float64)
+        #charges = np.array([  np.sum([a.element.charge for a in self.top.atoms if a.index in atom_indices]) for atom_indices in atom_indices_list],dtype=np.float64)
+        topology_labels = []
+        for i in range(n_beads):
+            atom_indices = atom_indices_list[i]
+            bead_label = bead_label_list[i]
+            xyz_i = distance.compute_center_of_mass(self,atom_indices)
+            xyz[:,i,:] = xyz_i
+            bead_label = bead_label_list[i]
+            element_label='CG%i'%(i+1)
+            element.Element(1000+i, element_label, element_label, masses[i], 1.0)
+
+            topology_labels.append( [i,element_label,element_label,i,bead_label,0] )
+
+        pd = import_('pandas')
+        df = pd.DataFrame(topology_labels,columns=columns)
+        topology = Topology.from_dataframe(df,bonds=bonds)
+
+        if inplace:
+            if self._topology is not None:
+                self._topology = topology
+            self._xyz = xyz
+
+            return self
+
+        unitcell_lengths = unitcell_angles = None
+        if self._have_unitcell:
+            unitcell_lengths = self._unitcell_lengths.copy()
+            unitcell_angles = self._unitcell_angles.copy()
+        time = self._time.copy()
+
+        return Trajectory(xyz=xyz, topology=topology, time=time,
+                          unitcell_lengths=unitcell_lengths,
+                          unitcell_angles=unitcell_angles)
 
     def atom_slice(self, atom_indices, inplace=False):
         """Create a new trajectory from a subset of atoms
