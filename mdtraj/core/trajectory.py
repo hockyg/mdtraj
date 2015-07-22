@@ -1625,15 +1625,16 @@ class Trajectory(object):
         """
         return self.atom_slice(atom_indices, inplace=inplace)
 
-    def cg_by_index(self, atom_indices_list, bead_label_list, inplace=False, bonds=None):
-        """Create a coarse grained (CG) trajectory from subsets of atoms by 
-            computing centers of mass of selected sets of atoms."
+    def cg_by_selection(self, selection_string_list, *args, **kwargs):
+        """Create a coarse grained (CG) trajectory from list of atom selections by 
+            computing centers of mass of selected sets of atoms.
 
         Parameters
         ----------
-        atom_indices_list : list of array-like, dtype=int, shape=(n_beads,n_atoms)
-            List of indices of atoms to combine into CG sites
+        selection_string_list : list of strings in mdtraj selection language, shape=(n_beads,)
         bead_label_list : list of maximum 4-letter strings to label CG sites
+        chain_list : optional list of chain id's to split resulting beads into separate chains
+        segment_id_list : optional list of segment id's to assign cg residues
         inplace : bool, default=False
             If ``True``, the operation is done inplace, modifying ``self``.
             Otherwise, a copy is returned with the sliced atoms, and
@@ -1641,6 +1642,38 @@ class Trajectory(object):
         bonds : array-like,dtype=int, shape=(n_bonds,2), default=None
             If specified, sets these bonds in new topology 
 
+        Returns
+        -------
+        traj : md.Trajectory
+            The return value is either ``self``, or the new trajectory,
+            depending on the value of ``inplace``.
+        """
+
+        atom_indices_list = []
+        for sel_string in selection_string_list:
+            atom_indices_list.append( self.top.select(sel_string) )
+            if len(atom_indices_list[-1])==0:
+                print("Warning - selection string returns 0 atoms: '%s'"%sel_string)
+        return self.cg_by_index( atom_indices_list, *args, **kwargs )
+
+    def cg_by_index(self, atom_indices_list, bead_label_list, chain_list=None, segment_id_list = None, inplace=False, bonds=None, ):
+        """Create a coarse grained (CG) trajectory from subsets of atoms by 
+            computing centers of mass of selected sets of atoms.
+
+        Parameters
+        ----------
+        atom_indices_list : list of array-like, dtype=int, shape=(n_beads,n_atoms)
+            List of indices of atoms to combine into CG sites
+        bead_label_list : list of maximum 4-letter strings to label CG sites
+        chain_list : optional list of chain id's to split resulting beads into separate chains
+        segment_id_list : optional list of segment id's to assign cg residues
+        inplace : bool, default=False
+            If ``True``, the operation is done inplace, modifying ``self``.
+            Otherwise, a copy is returned with the sliced atoms, and
+            ``self`` is not modified.
+        bonds : array-like,dtype=int, shape=(n_bonds,2), default=None
+            If specified, sets these bonds in new topology 
+ 
         Returns
         -------
         traj : md.Trajectory
@@ -1655,6 +1688,14 @@ class Trajectory(object):
                 raise ValueError("Specified bead label '%s' is not valid, must be a string between 1 and 4 characters"%bead_label)
         bead_label_list = [ bead_label.upper() for bead_label in bead_label_list ]
 
+        if chain_list is None:
+            chain_list = np.zeros(len(atom_indices_list),dtype=int)
+        elif len(chain_list)!=len(atom_indices_list):
+            raise ValueError("Supplied chain_list must be of the same length as a list of selected atom indices")
+
+        if segment_id_list is not None and len(segment_id_list)!=len(atom_indices_list):
+            raise ValueError("Supplied segment_id_list must be of the same length as a list of selected atom indices")
+
         n_beads = len(atom_indices_list)
         xyz = np.zeros((self.xyz.shape[0],n_beads,self.xyz.shape[2]),dtype=self.xyz.dtype,order='C')
         columns = ["serial","name","element","resSeq","resName","chainID"]
@@ -1667,14 +1708,20 @@ class Trajectory(object):
             xyz_i = distance.compute_center_of_mass(self,atom_indices)
             xyz[:,i,:] = xyz_i
             bead_label = bead_label_list[i]
-            element_label='CG%i'%(i+1)
+            #element_label='CG%i'%(i+1)
+            element_label='%4s'%('B%i'%(i+1))
             element.Element(1000+i, element_label, element_label, masses[i], 1.0)
 
-            topology_labels.append( [i,element_label,element_label,i,bead_label,0] )
+            topology_labels.append( [i,element_label,element_label,i,'%3s'%bead_label,chain_list[i]] )
 
         pd = import_('pandas')
         df = pd.DataFrame(topology_labels,columns=columns)
         topology = Topology.from_dataframe(df,bonds=bonds)
+        
+        if segment_id_list is not None:
+            for beadidx,bead in enumerate(topology.atoms):
+                bead.residue.segment_id = segment_id_list[beadidx]
+            
 
         if inplace:
             if self._topology is not None:
