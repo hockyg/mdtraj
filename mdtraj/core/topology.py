@@ -96,6 +96,7 @@ def _topology_from_subset(topology, atom_indices):
                     if not residue == previous_residue:
                         newResidue = newTopology.add_residue(residue.name, newChain,
                                                              resSeq)
+                        newResidue.segment_id = residue.segment_id
                         previous_residue = residue
                     
                     try:  # OpenMM Topology objects don't have serial attributes, so we have to check first.
