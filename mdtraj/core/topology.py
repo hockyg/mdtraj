@@ -226,6 +226,7 @@ class Topology(object):
             c = out.add_chain()
             for residue in chain.residues:
                 r = out.add_residue(residue.name, c, residue.resSeq)
+                r.segment_id = residue.segment_id
                 for atom in residue.atoms:
                     out.add_atom(atom.name, atom.element, r,
                                  serial=atom.serial)
@@ -272,6 +273,7 @@ class Topology(object):
             c = out.add_chain()
             for residue in chain.residues:
                 r = out.add_residue(residue.name, c, residue.resSeq)
+                r.segment_id = residue.segment_id
                 for atom in residue.atoms:
                     a = out.add_atom(atom.name, atom.element, r,
                                      serial=atom.serial)
