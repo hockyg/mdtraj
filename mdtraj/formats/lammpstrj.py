@@ -217,7 +217,7 @@ class LAMMPSTrajectoryFile(object):
             topology = topology.subset(atom_indices)
 
         initial = int(self._frame_index)
-        xyz, cell_lengths, cell_angles = self.read(n_frames=n_frames, stride=stride, atom_indices=atom_indices)
+        xyz, cell_lengths, cell_angles, velocities, forces = self.read(n_frames=n_frames, stride=stride, atom_indices=atom_indices)
         if len(xyz) == 0:
             return Trajectory(xyz=np.zeros((0, topology.n_atoms, 3)), topology=topology)
 
@@ -231,6 +231,8 @@ class LAMMPSTrajectoryFile(object):
         t = Trajectory(xyz=xyz, topology=topology, time=time)
         t.unitcell_lengths = cell_lengths
         t.unitcell_angles = cell_angles
+        t.velocities = velocities
+        t.forces = forces
         return t
 
     def read(self, n_frames=None, stride=None, atom_indices=None):
@@ -256,6 +258,12 @@ class LAMMPSTrajectoryFile(object):
         cell_angles : np.ndarray, None
             The angles (\alpha, \beta, \gamma) defining the unit cell for
             each frame, or None if  the information is not present in the file.
+
+        Optionally:
+            forces: np.ndarray, shape=(n_frames, n_atoms, 3), dtype=np.float32
+            velocities: np.ndarray, shape=(n_frames, n_atoms, 3), dtype=np.float32
+
+            These are both always returned but empty if not in the trajectory file
         """
         if not self._mode == 'r':
             raise ValueError('read() is only available when file is opened '
@@ -270,9 +278,10 @@ class LAMMPSTrajectoryFile(object):
             stride = 1
 
         all_coords, all_lengths, all_angles = [], [], []
+        all_velocities, all_forces = [], []
         for _ in frame_counter:
             try:
-                frame_coords, frame_lengths, frame_angles = self._read()
+                frame_coords, frame_lengths, frame_angles, extra_info = self._read()
                 if atom_indices is not None:
                     frame_coords = frame_coords[atom_indices, :]
             except _EOF:
@@ -281,6 +290,8 @@ class LAMMPSTrajectoryFile(object):
             all_coords.append(frame_coords)
             all_lengths.append(frame_lengths)
             all_angles.append(frame_angles)
+            if 'velocities' in extra_info: all_velocities.append(extra_info['velocities'])
+            if 'forces' in extra_info: all_forces.append(extra_info['forces'])
 
             for j in range(stride - 1):
                 # throw away these frames
@@ -292,7 +303,10 @@ class LAMMPSTrajectoryFile(object):
         all_coords = np.array(all_coords)
         all_lengths = np.array(all_lengths, dtype=np.float32)
         all_angles = np.array(all_angles, dtype=np.float32)
-        return all_coords, all_lengths, all_angles
+
+        all_velocities = np.array(all_velocities, dtype=np.float32)
+        all_forces = np.array(all_forces, dtype=np.float32)
+        return all_coords, all_lengths, all_angles, all_velocities, all_forces
 
     def parse_box(self, style):
         """Extract lengths and angles from a frame.
@@ -398,11 +412,30 @@ class LAMMPSTrajectoryFile(object):
             except KeyError:
                 raise IOError("Invalid .lammpstrj file. Must contain 'id', "
                               "'type', 'x*', 'y*' and 'z*' entries.")
+            if 'fx' in columns:
+                self._keep_forces = True
+                self._f_columns = [ columns[col] for col in ('fx','fy','fz') ]
+            else:
+                self._keep_forces = False
+
+            if 'vx' in columns:
+                self._keep_velocities = True
+                self._v_columns = [ columns[col] for col in ('vx','vy','vz') ]
+            else:
+                self._keep_velocities = False
         self._line_counter += 4
         # --- end header ---
 
         xyz = np.empty(shape=(self._n_atoms, 3))
         types = np.empty(shape=self._n_atoms, dtype='int')
+
+        extra_info = {}
+        if self._keep_forces:
+            forces = np.empty(shape=(self._n_atoms, 3))
+            extra_info['forces'] = forces
+        if self._keep_velocities:
+            velocities = np.empty(shape=(self._n_atoms, 3))
+            extra_info['velocities'] = velocities
 
         # --- begin body ---
         for _ in xrange(self._n_atoms):
@@ -414,6 +447,8 @@ class LAMMPSTrajectoryFile(object):
                 atom_index = int(split_line[self._atom_index_column])
                 types[atom_index - 1] = int(split_line[self._atom_type_column])
                 xyz[atom_index - 1] = [float(split_line[column]) for column in self._xyz_columns]
+                if self._keep_forces: forces[atom_index - 1] = [float(split_line[column]) for column in self._f_columns]
+                if self._keep_velocities: forces[atom_index - 1] = [float(split_line[column]) for column in self._v_columns]
             except Exception:
                 raise IOError('lammpstrj parse error on line {0:d} of "{1:s}". '
                               'This file does not appear to be a valid '
@@ -423,7 +458,7 @@ class LAMMPSTrajectoryFile(object):
         # --- end body ---
 
         self._frame_index += 1
-        return xyz, lengths, angles
+        return xyz, lengths, angles, extra_info
 
     def write_box(self, lengths, angles, mins):
         """Write the box lines in the header of a frame.
