@@ -50,6 +50,7 @@ from mdtraj.formats import AmberRestartFile
 
 from mdtraj.formats.prmtop import load_prmtop
 from mdtraj.formats.psf import load_psf
+from mdtraj.formats.lammpsdata import load_lmpd
 from mdtraj.formats.mol2 import load_mol2
 from mdtraj.formats.gro import load_gro
 from mdtraj.formats.arc import load_arc
@@ -71,7 +72,7 @@ from mdtraj.geometry import distance
 
 __all__ = ['open', 'load', 'iterload', 'load_frame', 'load_topology', 'Trajectory']
 # supported extensions for constructing topologies
-_TOPOLOGY_EXTS = ['.pdb', '.pdb.gz', '.h5','.lh5', '.prmtop', '.parm7',
+_TOPOLOGY_EXTS = ['.pdb', '.pdb.gz', '.h5','.lh5', '.prmtop', '.parm7','.data',
                   '.psf', '.mol2', '.hoomdxml', '.gro', '.arc']
 
 
@@ -136,13 +137,12 @@ def load_topology(filename, **kwargs):
     ----------
     filename : str
         Path to a file containing a system topology. The following extensions
-        are supported: '.pdb', '.pdb.gz', '.h5','.lh5', '.prmtop', '.parm7',
-            '.psf', '.mol2', '.hoomdxml'
+        are supported: %s
 
     Returns
     -------
     topology : md.Topology
-    """
+    """%",".join(_TOPOLOGY_EXTS)
     return _parse_topology(filename, **kwargs)
 
 
@@ -168,6 +168,8 @@ def _parse_topology(top, **kwargs):
         topology = load_prmtop(top, **kwargs)
     elif isinstance(top, string_types) and (ext in ['.psf']):
         topology = load_psf(top, **kwargs)
+    elif isinstance(top, string_types) and (ext in ['.data']):
+        topology = load_lmpd(top, **kwargs)
     elif isinstance(top, string_types) and (ext in ['.mol2']):
         topology = load_mol2(top, **kwargs).topology
     elif isinstance(top, string_types) and (ext in ['.gro']):
