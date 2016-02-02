@@ -271,8 +271,8 @@ def load_lmpd(fname, data_format='full'):
             resid = atom_type_dict['moleculeid'][i]
         else:
             resid = i+1
-        rname = resid
-        name = atomtype
+        rname = str(resid)
+        name = str(atomtype)
         charge = charges[i]
 
         if last_chain != segid:
