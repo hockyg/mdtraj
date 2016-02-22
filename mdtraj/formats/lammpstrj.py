@@ -507,7 +507,7 @@ class LAMMPSTrajectoryFile(object):
             self._fh.write('{0} {1} {2}\n'.format(ylo_bound, yhi_bound, xz))
             self._fh.write('{0} {1} {2}\n'.format(zlo_bound, zhi_bound, yz))
 
-    def write(self, xyz, cell_lengths, cell_angles=None, types=None, unit_set='real'):
+    def write(self, xyz, cell_lengths, cell_angles=None, types=None, unit_set='real', forces=None):
         """Write one or more frames of data to a lammpstrj file.
 
         Parameters
@@ -527,6 +527,8 @@ class LAMMPSTrajectoryFile(object):
             The LAMMPS unit set that the simulation was performed in. See
             http://lammps.sandia.gov/doc/units.html for options. Currently supported
             unit sets: 'real'.
+        forces : np.ndarray, shape=(n_frames, n_atoms, 3), optional
+            The forces on the atoms atoms to write. 
         """
         if not self._mode == 'w':
             raise ValueError('write() is only available when file is opened '
@@ -535,6 +537,10 @@ class LAMMPSTrajectoryFile(object):
         xyz = ensure_type(xyz, np.float32, 3, 'xyz', can_be_none=False,
                 shape=(None, None, 3), warn_on_cast=False,
                 add_newaxis_on_deficient_ndim=True)
+        if forces is not None:
+            forces = ensure_type(forces, np.float32, 3, 'forces', can_be_none=False,
+                    shape=(None, None, 3), warn_on_cast=False,
+                    add_newaxis_on_deficient_ndim=True)
         cell_lengths = ensure_type(cell_lengths, np.float32, 2, 'cell_lengths',
                 can_be_none=False, shape=(len(xyz), 3), warn_on_cast=False,
                 add_newaxis_on_deficient_ndim=True)
@@ -557,6 +563,11 @@ class LAMMPSTrajectoryFile(object):
         else:
             raise ValueError('Unsupported unit set specified: {0}.'.format(unit_set))
 
+        if forces is not None:
+            atom_format_string = '{0:d} {1:d} {2:f} {3:f} {4:f} {5:f} {6:f} {7:f}\n'
+        else:
+            atom_format_string = '{0:d} {1:d} {2:8.3f} {3:8.3f} {4:8.3f}\n'
+
         for i in range(xyz.shape[0]):
             # --- begin header ---
             self._fh.write('ITEM: TIMESTEP\n')
@@ -567,10 +578,16 @@ class LAMMPSTrajectoryFile(object):
             # --- end header ---
 
             # --- begin body ---
-            self._fh.write('ITEM: ATOMS id type xu yu zu\n')
+            if forces is not None:
+                self._fh.write('ITEM: ATOMS id type xu yu zu fx fy fz\n')
+            else:
+                self._fh.write('ITEM: ATOMS id type xu yu zu\n')
+
             for j, coord in enumerate(xyz[i]):
-                self._fh.write('{0:d} {1:d} {2:8.3f} {3:8.3f} {4:8.3f}\n'.format(
-                    j+1, types[j], coord[0], coord[1], coord[2]))
+                if forces is not None:
+                    self._fh.write(atom_format_string.format( j+1, types[j], coord[0], coord[1], coord[2], forces[i,j,0], forces[i,j,1], forces[i,j,2]) )
+                else:
+                    self._fh.write(atom_format_string.format( j+1, types[j], coord[0], coord[1], coord[2]) )
             # --- end body ---
 
     def seek(self, offset, whence=0):

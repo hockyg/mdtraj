@@ -1306,10 +1306,15 @@ class Trajectory(object):
         force_overwrite : bool, default=True
             Overwrite anything that exists at filename, if its already there
         """
+        if "forces" in self.__dict__:
+            forces = self.forces
+        else:
+            forces = None
+
         with LAMMPSTrajectoryFile(filename, 'w', force_overwrite=force_overwrite) as f:
             f.write(xyz=in_units_of(self.xyz, Trajectory._distance_unit, f.distance_unit),
                     cell_lengths=in_units_of(self.unitcell_lengths, Trajectory._distance_unit, f.distance_unit),
-                    cell_angles=self.unitcell_angles)
+                    cell_angles=self.unitcell_angles, forces = forces)
 
     def save_xyz(self, filename, force_overwrite=True):
         """Save trajectory to .xyz format.
