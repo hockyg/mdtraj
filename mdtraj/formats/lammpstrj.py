@@ -448,7 +448,7 @@ class LAMMPSTrajectoryFile(object):
                 types[atom_index - 1] = int(split_line[self._atom_type_column])
                 xyz[atom_index - 1] = [float(split_line[column]) for column in self._xyz_columns]
                 if self._keep_forces: forces[atom_index - 1] = [float(split_line[column]) for column in self._f_columns]
-                if self._keep_velocities: forces[atom_index - 1] = [float(split_line[column]) for column in self._v_columns]
+                if self._keep_velocities: velocities[atom_index - 1] = [float(split_line[column]) for column in self._v_columns]
             except Exception:
                 raise IOError('lammpstrj parse error on line {0:d} of "{1:s}". '
                               'This file does not appear to be a valid '
