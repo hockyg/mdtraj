@@ -1119,11 +1119,13 @@ class Trajectory(object):
                                             ndmin=1, copy=True)
         return newtraj
 
-    def __init__(self, xyz, topology, time=None, unitcell_lengths=None, unitcell_angles=None):
+    def __init__(self, xyz, topology, time=None, unitcell_lengths=None, unitcell_angles=None, velocities=None, forces=None):
         # install the topology into the object first, so that when setting
         # the xyz, we can check that it lines up (e.g. n_atoms), with the topology
         self.topology = topology
         self.xyz = xyz
+        self.velocities = velocities
+        self.forces = forces
 
         # _rmsd_traces are the inner product of each centered conformation,
         # which are required for computing RMSD. Normally these values are
@@ -1677,7 +1679,15 @@ class Trajectory(object):
         --------
         stack : stack multiple trajectories along the atom axis
         """
+        forces = None
+        velocities = None
+
         xyz = np.array(self.xyz[:, atom_indices], order='C')
+        if self.forces is not None:
+            forces = np.array(self.forces[:,atom_indices], order='C')
+        if self.velocities is not None:
+            velocities = np.array(self.velocities[:,atom_indices], order='C')
+
         topology = None
         if self._topology is not None:
             topology = self._topology.subset(atom_indices)
@@ -1686,6 +1696,8 @@ class Trajectory(object):
             if self._topology is not None:
                 self._topology = topology
             self._xyz = xyz
+            self.forces = forces
+            self.velocities = velocities
 
             return self
 
@@ -1697,7 +1709,9 @@ class Trajectory(object):
 
         return Trajectory(xyz=xyz, topology=topology, time=time,
                           unitcell_lengths=unitcell_lengths,
-                          unitcell_angles=unitcell_angles)
+                          unitcell_angles=unitcell_angles, 
+                          velocities=velocities,
+                          forces=forces)
 
     def remove_solvent(self, exclude=None, inplace=False):
         """
